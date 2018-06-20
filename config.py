@@ -63,14 +63,14 @@ class Config():
         print ("the data file path is:", vocab_path)
 
         self.data_utility = DataUtility(vocab_file_in_words=vocab_file_in_words,
-                                        vocab_file_in_letters=vocab_file_in_letters,
-                                        vocab_file_out=vocab_file_out,
-                                        vocab_file_phrase=vocab_file_phrase)
 
-        self.vocab_size_letter = self.data_utility.in_letters_count
+                                        vocab_file_out=vocab_file_out,
+                                        )
+
+        # self.vocab_size_letter = self.data_utility.in_letters_count
         self.vocab_size_in = self.data_utility.in_words_count
         self.vocab_size_out = self.data_utility.out_words_count
-        self.vocab_size_phrase = self.data_utility.phrase_count
+        # self.vocab_size_phrase = self.data_utility.phrase_count
 
         if config_filename is not None:
             with open(config_filename) as f:

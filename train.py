@@ -57,8 +57,6 @@ import random
 import sys
 
 from tensorflow.python.framework.graph_util import convert_variables_to_constants
-#from seq2word_rnn_model import WordModel, LetterModel
-#from seq2word_gcnn_model import WordModel, LetterModel
 from gcnn_model import WordModel
 from config import Config
 import config
@@ -66,7 +64,7 @@ import data_feeder as data_feeder
 import os
 
 
-#os.environ['CUDA_VISIBLE_DEVICES']='3' 
+#os.environ['CUDA_VISIBLE_DEVICES']='3'
 
 
 FLAGS = config.FLAGS
@@ -74,41 +72,25 @@ data_type = config.data_type
 index_data_type = config.index_data_type
 np_index_data_type = config.np_index_data_type
 
-
 def export_graph(session, iter, phase="lm"):
     if phase == "lm":
         # Export variables related to language model only
         variables_to_export = ["Online/WordModel/probabilities",
                                "Online/WordModel/state_out",
-                               # "Online/WordModel/phrase_p_probabilities",
-                               # "Online/WordModel/phrase_p_prediction",
-                               # "Online/WordModel/phrase_probabilities",
-                               # "Online/WordModel/phrase_top_k_prediction",
-                               #"Online/WordModel/logits_phrase",
-                               "Online/WordModel/top_k_prediction"]
+                               "Online/WordModel/top_k_prediction",
+                               "Online/WordModel/cnn_out"
+                               ]
     elif phase == "kc_full":
         variables_to_export = ["Online/WordModel/probabilities",
                                "Online/WordModel/state_out",
-                               # "Online/WordModel/phrase_p_probabilities",
-                               # "Online/WordModel/phrase_p_prediction",
-                               # "Online/WordModel/phrase_probabilities",
-                               # "Online/WordModel/phrase_top_k_prediction",
-                               #"Online/WordModel/logits_phrase",
                                "Online/WordModel/top_k_prediction",
-                               # "Online/LetterModel/probabilities",
-                               # "Online/LetterModel/state_out",
-                               # "Online/LetterModel/top_k_prediction"
-                                                                        ]
+                               "Online/WordModel/cnn_out"
+                               ]
     else:
         assert phase == "kc_slim"
         variables_to_export = ["Online/WordModel/state_out",
-                               # "Online/WordModel/phrase_p_probabilities",
-                               # "Online/WordModel/phrase_p_prediction",
-                               # "Online/WordModel/logits_phrase",
-                               # "Online/LetterModel/probabilities",
-                               # "Online/LetterModel/state_out",
-                               # "Online/LetterModel/top_k_prediction"]
-                                                                            ]
+                               "Online/WordModel/cnn_out"
+                               ]
 
     graph_def = convert_variables_to_constants(session, session.graph_def, variables_to_export)
     config_name = FLAGS.model_config
@@ -123,79 +105,15 @@ def export_graph(session, iter, phase="lm"):
     print("Graph is saved to: ", model_export_name)
 
 
-# def run_letter_epoch(session, data, word_model, letter_model, config, eval_op=None, verbose=False):
-#     """Runs the model on the given data."""
-#     start_time = time.time()
-#     costs = 0.0
-#     iters = 0
-#     num_word = 0
-#     fetches = {}
-#     fetches_letter = {}
-#     #previous_state = session.run(word_model.initial_state)
-#
-#     for step, (epoch_size, lm_data, letter_data, phrase_p_data, phrase_data) in \
-#             enumerate(data_feeder.data_iterator(data, config)):
-#         if FLAGS.laptop_discount > 0 and step >= FLAGS.laptop_discount:
-#             break
-#         if step >= epoch_size:
-#             break
-#
-#         fetches["rnn_state"] = word_model.rnn_state
-#         fetches["final_state"] = word_model.final_state
-#         fetches_letter["cost"] = letter_model.cost
-#
-#         if eval_op is not None:
-#             fetches_letter["eval_op"] = eval_op
-#         feed_dict = {word_model.input_data: lm_data[0],
-#                      word_model.target_data: lm_data[1],
-#                      word_model.output_masks: lm_data[2],
-#                      word_model.sequence_length: lm_data[3],
-#                      #word_model.initial_state: previous_state
-#                      }
-#         vals = session.run(fetches, feed_dict)
-#
-#         previous_state = vals["final_state"]
-#         rnn_state_to_letter_model = vals["rnn_state"]
-#
-#         feed_dict_letter = {letter_model.lm_state_in: rnn_state_to_letter_model,
-#                             letter_model.input_data: letter_data[0],
-#                             letter_model.target_data: letter_data[1],
-#                             letter_model.output_masks: letter_data[2],
-#                             letter_model.sequence_length: letter_data[3]}
-#         vals_letter = session.run(fetches_letter, feed_dict_letter)
-#         cost_letter = vals_letter["cost"]
-#
-#         costs += cost_letter
-#         iters += np.sum(letter_data[2])
-#         num_word += np.sum(letter_data[3])
-#
-#         if verbose and step % (epoch_size // 100) == 0:
-#             if costs / iters > 100.0:
-#                 print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] PPL TOO LARGE! %.3f ENTROPY: (%.3f) speed: %.0f wps" %
-#                       (step * 1.0 / epoch_size, costs / iters, num_word / (time.time() - start_time)))
-#             else:
-#                 print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] %.3f letter_ppl: %.3f speed: %.0f wps" %
-#                       (step * 1.0 / epoch_size, np.exp(costs / iters), num_word / (time.time() - start_time)))
-#             sys.stdout.flush()
-#
-#     return np.exp(costs / iters)
-
-
 def run_word_epoch(session, data, word_model, config, lm_phase_id, eval_op=None, verbose=False):
     """Runs the model on the given data."""
     start_time = time.time()
     costs = 0.0
     iters = 0
-    # costs_phrase_p =0
-    # costs_phrase = 0
-    # iters_phrase_p = 0
-    # iters_phrase = 0
     num_word = 0
     fetches = {}
-    #previous_state = session.run(word_model.initial_state)
-    
 
-    for step, (epoch_size, lm_data, _, phrase_p_data, phrase_data) in \
+    for step, (epoch_size, lm_data) in \
             enumerate(data_feeder.data_iterator(data, config)):
         if FLAGS.laptop_discount > 0 and step >= FLAGS.laptop_discount:
             break
@@ -211,33 +129,20 @@ def run_word_epoch(session, data, word_model, config, lm_phase_id, eval_op=None,
         feed_dict = {word_model.input_data: lm_data[0],
                      word_model.target_data: lm_data[1],
                      word_model.output_masks: lm_data[2],
-                     word_model.sequence_length: lm_data[3],
-                     # word_model.target_phrase_p: phrase_p_data[0],
-                     # word_model.target_phrase_p_masks: phrase_p_data[1],
-                     # word_model.target_phrase_data: phrase_data[0],
-                     # word_model.target_phrase_data_masks: phrase_data[1],
-                     # word_model.target_phrase_logits_masks: phrase_data[2],
-                     #word_model.initial_state: previous_state
+                     word_model.sequence_length: lm_data[3]
                      }
         vals = session.run(fetches, feed_dict)
         cost = vals["cost"]
-        previous_state = vals["final_state"]
 
         costs += cost[0]
-        # costs_phrase_p += cost[1]
-        # costs_phrase += cost[2]
         iters += np.sum(lm_data[2])
-        # iters_phrase_p += np.sum(phrase_p_data[1])
-        # iters_phrase += np.sum(phrase_data[1])
 
         num_word += np.sum(lm_data[3])
         if verbose and step % (epoch_size // 100) == 0:
             print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] "
-                  "%.3f word ppl: %.3f speed: %.0f wps"
+                "%.3f word ppl: %.3f speed: %.0f wps"
                   % (step * 1.0 / epoch_size, np.exp(costs / iters),
-                  # np.exp(costs_phrase_p / iters_phrase_p),
-                  # np.exp(costs_phrase / iters_phrase),
-                  num_word / (time.time() - start_time)))
+                     num_word / (time.time() - start_time)))
             sys.stdout.flush()
     all_costs = np.exp(costs / iters)
     return all_costs
@@ -246,7 +151,7 @@ def run_word_epoch(session, data, word_model, config, lm_phase_id, eval_op=None,
 def main(_):
     if not FLAGS.data_path:
         raise ValueError("Must set --data_path to PTB data directory")
-    
+
     logfile = open(FLAGS.model_config + '.log', 'w')
 
     config = Config()
@@ -261,7 +166,7 @@ def main(_):
         initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
         gpu_config = tf.ConfigProto()
         gpu_config.gpu_options.allow_growth = True
-        #gpu_config.gpu_options.per_process_gpu_memory_fraction = config.gpu_fraction
+        # gpu_config.gpu_options.per_process_gpu_memory_fraction = config.gpu_fraction
         train_data = data_feeder.read_file(FLAGS.data_path, config, is_train=True)
         valid_data = data_feeder.read_file(FLAGS.data_path, config, is_train=False)
         print("in words vocabulary size = %d\nout words vocabulary size = %d\nin letters vocabulary size = %d"
@@ -276,29 +181,20 @@ def main(_):
                     mtrain = WordModel(is_training=True, config=config)
                     train_op = mtrain.train_op
 
-                # with tf.variable_scope("LetterModel", reuse=False, initializer=initializer):
-                #     mtrain_letter = LetterModel(is_training=True, config=config)
-                #     train_letter_op = mtrain_letter.train_op
-
             with tf.name_scope("Valid"):
 
                 with tf.variable_scope("WordModel", reuse=True, initializer=initializer):
                     mvalid = WordModel(is_training=False, config=config)
 
-                # with tf.variable_scope("LetterModel", reuse=True, initializer=initializer):
-                #     mvalid_letter = LetterModel(is_training=False, config=config)
             with tf.name_scope("Online"):
-                
+
                 with tf.variable_scope("WordModel", reuse=True, initializer=initializer):
                     monline = WordModel(is_training=False, config=test_config)
-                # with tf.variable_scope("LetterModel", reuse=True, initializer=initializer):
-                #     monline_letter = LetterModel(is_training=False, config=test_config)
 
             restore_variables = dict()
             for v in tf.trainable_variables():
-
                 print("store:", v.name)
-               
+
                 restore_variables[v.name] = v
 
             sv = tf.train.Saver(restore_variables)
@@ -307,7 +203,7 @@ def main(_):
                 FLAGS.model_name += ".ckpt"
 
             session.run(tf.global_variables_initializer())
-            
+
             check_point_dir = os.path.join(FLAGS.save_path)
             ckpt = tf.train.get_checkpoint_state(check_point_dir)
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
@@ -338,7 +234,8 @@ def main(_):
                     mtrain.assign_lr(session, config.learning_rate * lr_decay)
                     print(time.strftime('%Y-%m-%d %H:%M:%S'), file=logfile)
                     print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(mtrain.lr)), file=logfile)
-                    train_perplexity = run_word_epoch(session, train_data, mtrain, config, lm_phase_id, train_op, verbose=True)
+                    train_perplexity = run_word_epoch(session, train_data, mtrain, config, lm_phase_id, train_op,
+                                                      verbose=True)
                     print(time.strftime('%Y-%m-%d %H:%M:%S'), file=logfile)
                     print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity), file=logfile)
                     logfile.flush()
@@ -357,38 +254,13 @@ def main(_):
                     export_graph(session, i, phase="lm")
                     export_graph(session, i, phase="kc_slim")
                     print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] Finish exporting lm graph!")
-                
-            # print("training letter model.")
-            # print("training letter model", file=logfile)
-            # for i in range(config.max_max_epoch):
-            #     lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0)
-            #
-            #     mtrain_letter.assign_lr(session, config.learning_rate * lr_decay)
-            #     print(time.strftime('%Y-%m-%d %H:%M:%S'), file=logfile)
-            #     print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(mtrain_letter.lr)), file=logfile)
-            #     train_perplexity = run_letter_epoch(session,train_data, mtrain, mtrain_letter, config, train_letter_op,
-            #                                         verbose=True)
-            #     print(time.strftime('%Y-%m-%d %H:%M:%S'), file=logfile)
-            #     print("Epoch: %d Train ppl: %.3f" % (i + 1, train_perplexity), file=logfile)
-            #     logfile.flush()
-            #
-            #     print(time.strftime('%Y-%m-%d %H:%M:%S'), file=logfile)
-            #     valid_perplexity = run_letter_epoch(session, valid_data, mtrain, mvalid_letter, config)
-            #     print("Epoch: %d Valid ppl: %.3f" % (i + 1, valid_perplexity), file=logfile)
-            #     logfile.flush()
-            #
-            #     print("Saving model to %s." % FLAGS.save_path, file=logfile)
-            #     step = mtrain_letter.get_global_step(session)
-            #     model_save_path = os.path.join(save_path, FLAGS.model_name)
-            #     sv.save(session, model_save_path, global_step=step)
-            #     print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] Begin exporting letter model graph!")
-            #
-            #     export_graph(session, i, phase="kc_full")
-            #     export_graph(session, i, phase="kc_slim")
-            #
-            #     print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] Finish exporting letter model graph!")
-            
+
             logfile.close()
+
 
 if __name__ == "__main__":
     tf.app.run()
+
+
+
+

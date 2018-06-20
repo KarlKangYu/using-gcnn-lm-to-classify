@@ -53,6 +53,7 @@ class WordModel(object):
                 inputs = tf.reshape(tf.matmul(tf.reshape(inputs, [-1, self.embedding_size]),
                                           embedding_to_rnn),
                                 shape=[self.batch_size, -1, self.hidden_size])
+                print("the shape of inputs to cnn:", inputs.shape)
 
                 if is_training and config.keep_prob < 1:
                     inputs = tf.nn.dropout(inputs, config.keep_prob)
@@ -71,7 +72,9 @@ class WordModel(object):
             #gcnn10 = self.gated_cnn_layer(gcnn9, self.filter_width, self.hidden_size, 10)
             #gcnn11 = self.gated_cnn_layer(gcnn10, self.filter_width, self.hidden_size, 11)
             #gcnn12 = self.gated_cnn_layer(gcnn11, self.filter_width, self.hidden_size, 12) + gcnn9
-            
+
+            print("the first layer output of GCNN network be shape:", tf.shape(gcnn1))
+            print("the second layer output of GCNN network be shape:", tf.shape(gcnn2))
             print ("the final output of GCNN network be shape:", tf.shape(gcnn6)) #gcnn12.get_shape().as_list()
 
             # output as the final layer (GCNN structure), noted as the final state also as input of the softmax  
