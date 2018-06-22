@@ -59,7 +59,8 @@ class Classification(object):
                 # print("Variables:", v.name)
                 restore_variables[v.name] = v
         gpu_config = tf.ConfigProto()
-        gpu_config.gpu_options.per_process_gpu_memory_fraction = self._config.gpu_fraction
+        gpu_config.gpu_options.allow_growth = True
+        # gpu_config.gpu_options.per_process_gpu_memory_fraction = self._config.gpu_fraction
         sess_lm = tf.Session(graph=g_lm, config=gpu_config)
 
         sv = tf.train.Saver(restore_variables)
@@ -95,7 +96,8 @@ class Classification(object):
         #     tf.import_graph_def(graph_def)
 
         gpu_config = tf.ConfigProto()
-        gpu_config.gpu_options.per_process_gpu_memory_fraction = self._config.gpu_fraction
+        gpu_config.gpu_options.allow_growth = True
+        # gpu_config.gpu_options.per_process_gpu_memory_fraction = self._config.gpu_fraction
         self._sess = tf.Session(graph=tf.get_default_graph(), config=gpu_config)
 
         self.global_step = tf.train.get_or_create_global_step()
