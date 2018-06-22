@@ -52,8 +52,8 @@ def train_in_ids_lm(train_data, vocab_path, out_dir):
                 words = line.strip()
                 words = words.replace('.', ' .')
                 words = words.replace(',', ' ,')
-                words = words.replace("'", " ' ")
-                words = words.replace('"', ' " ')
+                words = words.replace("'", "' ")
+                words = words.replace('"', '" ')
                 words = words.split()
                 words_ids = data_ut.words2ids(words)
                 words_ids = [str(id) for id in words_ids]
