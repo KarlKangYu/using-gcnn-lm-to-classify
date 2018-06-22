@@ -40,7 +40,7 @@ class WordModel(object):
                                               embedding_to_cnn),
                                     shape=[self.batch_size, -1, self.hidden_size])
 
-                print("the shape of inputs to cnn:", inputs.shape)
+                # print("the shape of inputs to cnn:", inputs.shape)
 
                 if is_training and config.keep_prob < 1:
                     inputs = tf.nn.dropout(inputs, config.keep_prob)
@@ -60,10 +60,10 @@ class WordModel(object):
             # gcnn11 = self.gated_cnn_layer(gcnn10, self.filter_width, self.hidden_size, 11)
             # gcnn12 = self.gated_cnn_layer(gcnn11, self.filter_width, self.hidden_size, 12) + gcnn9
 
-            print("the first layer output of GCNN network be shape:", gcnn1.shape)
-            print("the second layer output of GCNN network be shape:", gcnn2.shape)
-
-            print("the final output of GCNN network be shape:", tf.shape(gcnn6))  # gcnn12.get_shape().as_list()
+            # print("the first layer output of GCNN network be shape:", gcnn1.shape)
+            # print("the second layer output of GCNN network be shape:", gcnn2.shape)
+            #
+            # print("the final output of GCNN network be shape:", gcnn6.shape,tf.shape(gcnn6))  # gcnn12.get_shape().as_list()
 
             # output as the final layer (GCNN structure), noted as the final state also as input of the softmax
             # check the dimension of the output
@@ -78,8 +78,8 @@ class WordModel(object):
             state = gcnn6[:, -1, :]
             state = tf.expand_dims(tf.expand_dims(state, axis=0), axis=0)
 
-            print("output shape:", cnn_output.shape)
-            print("state shape:", cnn_state.shape)
+            # print("output shape:", cnn_output.shape)
+            # print("state shape:", cnn_state.shape)
 
             with tf.variable_scope("Softmax"):
                 cnn_output_to_final_output = tf.get_variable("cnn_output_to_final_output",
@@ -144,9 +144,9 @@ class WordModel(object):
         conv2 = tf.add(tf.nn.conv2d(inputs, gwc, strides = [1,1,1,1], padding = 'VALID'), gbc)
         #conv = conv1 * tf.sigmoid(conv2)
         conv = tf.tanh(conv1) * tf.sigmoid(conv2)
-        print("gcnn%d conv shape:"%layer_num, conv.shape)
+        # print("gcnn%d conv shape:"%layer_num, conv.shape)
         final = tf.squeeze(conv, axis = 2)
-        print("gcnn%d final shape:" % layer_num, final.shape)
+        # print("gcnn%d final shape:" % layer_num, final.shape)
         return final
 
     def assign_lr(self, session, lr_value):

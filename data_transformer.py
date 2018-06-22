@@ -34,7 +34,7 @@ def letter_id(letter_data, vocab_path):
                 f1.write(letter + '##' + str(count) + '\n')
                 count += 1
 
-def train_in_ids_lm(train_data, vocab_path):
+def train_in_ids_lm(train_data, vocab_path, out_dir):
     if not os.path.exists(vocab_path):
         os.mkdir(vocab_path)
     vocab_file_in_words = os.path.join(vocab_path, "vocab_in_words")
@@ -47,11 +47,13 @@ def train_in_ids_lm(train_data, vocab_path):
 
 
     with codecs.open(train_data, "r") as f:
-        with codecs.open(os.path.join(vocab_path, "train_in_ids_lm"), "w") as f1:
+        with codecs.open(os.path.join(vocab_path, out_dir), "w") as f1:
             for line in f.readlines():
                 words = line.strip()
                 words = words.replace('.', ' .')
                 words = words.replace(',', ' ,')
+                words = words.replace("'", " ' ")
+                words = words.replace('"', ' " ')
                 words = words.split()
                 words_ids = data_ut.words2ids(words)
                 words_ids = [str(id) for id in words_ids]
@@ -103,9 +105,10 @@ if __name__ == '__main__':
     # letter_data_path = args[3]
     train_data = args[2]
     # emoji_data = args[5]
+    out_dir = args[3]
 
     # word_id(word_data_path, vocab_path)
     # letter_id(letter_data_path, vocab_path)
-    train_in_ids_lm(train_data, vocab_path)
+    train_in_ids_lm(train_data, vocab_path, out_dir)
     # train_in_ids_letters(train_data, vocab_path, emoji_data)
 
