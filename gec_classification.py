@@ -49,25 +49,25 @@ class Classification(object):
         print("Graph is saved to: ", model_export_name)
 
 
-    def get_min_probability_words_cnnout(self, inputs, y_inputs):
-        g_lm = tf.Graph()
-        with g_lm.as_default():
-            with tf.variable_scope("WordModel"):
-                lm = WordModel(is_training=False, config=self._config)
-            restore_variables = dict()
-            for v in tf.trainable_variables():
-                # print("Variables:", v.name)
-                restore_variables[v.name] = v
-        gpu_config = tf.ConfigProto()
-        gpu_config.gpu_options.allow_growth = True
-        # gpu_config.gpu_options.per_process_gpu_memory_fraction = self._config.gpu_fraction
-        sess_lm = tf.Session(graph=g_lm, config=gpu_config)
-
-        sv = tf.train.Saver(restore_variables)
-        sv.restore(sess_lm, self.model)
+    def get_min_probability_words_cnnout(self, inputs, y_inputs, lm):
+        # g_lm = tf.Graph()
+        # with g_lm.as_default():
+        #     with tf.variable_scope("WordModel"):
+        #         lm = WordModel(is_training=False, config=self._config)
+        #     restore_variables = dict()
+        #     for v in tf.trainable_variables():
+        #         # print("Variables:", v.name)
+        #         restore_variables[v.name] = v
+        # gpu_config = tf.ConfigProto()
+        # gpu_config.gpu_options.allow_growth = True
+        # # gpu_config.gpu_options.per_process_gpu_memory_fraction = self._config.gpu_fraction
+        # sess_lm = tf.Session(graph=g_lm, config=gpu_config)
+        #
+        # sv = tf.train.Saver(restore_variables)
+        # sv.restore(sess_lm, self.model)
         # sv = tf.train.import_meta_graph("model_1/model_test.ckpt-485.meta")
         # sv.restore(self._sess, "./model_1/model_test.ckpt-485")
-        probabilities, cnn_outs = sess_lm.run([lm._probabilities, lm.cnn_out], feed_dict={lm.input_data: inputs})#[batch, num_steps, vocab]
+        probabilities, cnn_outs = self.sess_lm.run([lm._probabilities, lm.cnn_out], feed_dict={lm.input_data: inputs})#[batch, num_steps, vocab]
         probabilities = np.reshape(probabilities, [self.batch_size, self.num_setps, -1])
         inputs_oh = np.eye(self.vocab_size)[y_inputs]
         probabilities_oh = probabilities * inputs_oh
@@ -90,6 +90,23 @@ class Classification(object):
         logfile = open(self.FLAGS.model_config + '.log', 'w')
         train_data = data_feeder.read_file(self.FLAGS.data_path, self._config, is_train=True)
         valid_data = data_feeder.read_file(self.FLAGS.data_path, self._config, is_train=False)
+
+        g_lm = tf.Graph()
+        with g_lm.as_default():
+            with tf.variable_scope("WordModel"):
+                lm = WordModel(is_training=False, config=self._config)
+            restore_variables = dict()
+            for v in tf.trainable_variables():
+                print("LM Variables:", v.name)
+                restore_variables[v.name] = v
+        gpu_config = tf.ConfigProto()
+        gpu_config.gpu_options.allow_growth = True
+        # gpu_config.gpu_options.per_process_gpu_memory_fraction = self._config.gpu_fraction
+        self.sess_lm = tf.Session(graph=g_lm, config=gpu_config)
+
+        sv = tf.train.Saver(restore_variables)
+        sv.restore(self.sess_lm, self.model)
+
         # with open(self.model, 'rb') as f:
         #     graph_def = tf.GraphDef()
         #     graph_def.ParseFromString(f.read())
@@ -164,7 +181,7 @@ class Classification(object):
             for step, (batches_per_epoch, lm_in, lm_out, label) in enumerate(data_feeder.data_iterator(train_data, self._config)):
                 if step >= batches_per_epoch:
                     break
-                cnn_outs = self.get_min_probability_words_cnnout(lm_in, lm_out)
+                cnn_outs = self.get_min_probability_words_cnnout(lm_in, lm_out, lm)
                 feed_dict = {self.cnn_inputs: cnn_outs,
                              self.y: label}
 
