@@ -8,6 +8,8 @@ def split(data_dir, pos_dir, neg_dir):
                 for line in f1.readlines():
                     line = line.strip()
                     neg, pos = line.split('\t')
+                    neg = neg[:-1]
+                    pos = pos[:-1]
                     f2.write(pos + '\n')
                     f3.write(neg + '\n')
 
