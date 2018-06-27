@@ -10,7 +10,7 @@ flags.DEFINE_string("model_config", "static-sanity-check.cfg", "Model hyperparam
 flags.DEFINE_string("data_path", "data_file/", "Where the training/test data is stored.")
 flags.DEFINE_string("vocab_path", "data_file/", "Where the training/test data is stored.")
 flags.DEFINE_string("file_name_stem", "ptb", "corpus file name (without suffix).")
-flags.DEFINE_string("num_test_cases", 0, "# of test cases reading from stdin. Works for inference phase only. Default: zero.")
+flags.DEFINE_integer("num_test_cases", 0, "# of test cases reading from stdin. Works for inference phase only. Default: zero.")
 flags.DEFINE_string("save_path", "model_classify/", "Model output directory.")
 flags.DEFINE_string("model_name", "model_test", "Pick a name for your model.")
 flags.DEFINE_string("graph_save_path", "graph_classify/", "Exported graph directory.")
