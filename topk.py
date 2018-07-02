@@ -6,7 +6,7 @@ import numpy as np
 
 BATCH_SIZE, NUM_STEPS, VOCAB_SIZE = 2, 4, 10
 HIDDEN_SIZE = 6
-TOP_K = 1
+TOP_K = 2
 
 
 a1, a2 = np.random.random([BATCH_SIZE, NUM_STEPS, VOCAB_SIZE]), np.random.random([BATCH_SIZE, NUM_STEPS, HIDDEN_SIZE])
@@ -20,7 +20,8 @@ cnn_outs = tf.constant(a2, dtype=tf.float32)
 y_inputs = tf.constant(y)
 
 inputs_one_hot = tf.one_hot(indices=y_inputs, depth=VOCAB_SIZE, axis=-1) # [BATCH_SIZE, NUM_STEPS, VOCAB_SIZE]
-probs = tf.reduce_max(probabilities * inputs_one_hot, axis=-1, keepdims=False) # [BATCH_SIZE, NUM_STEPS]
+probs = tf.reduce_max(probabilities * inputs_one_hot, axis=-1) # [BATCH_SIZE, NUM_STEPS]
+print("probs shape:", probs.shape)
 zero_mask = tf.cast(tf.equal(y_inputs, tf.zeros_like(y_inputs)), tf.float32)
 
 probs = probs + zero_mask  # 给补零的位置加一（从而结果大于1），防止被取出
@@ -33,8 +34,11 @@ top_k_values, top_k_indices = tf.nn.top_k(-probs, k=TOP_K) # [BATCH_SIZE, TOP_K]
 cnn_indices = tf.reshape(tf.tile(tf.reshape(tf.range(BATCH_SIZE), [-1, 1]), multiples=[1, TOP_K]), [-1])
 res = tf.transpose(tf.stack([cnn_indices, tf.reshape(top_k_indices, [-1])]), [1, 0])   #[BATCH_SIZE * TOP_K, 2]
 
+#即手动添加上batch的这个维度，然后将batch和topk提取出的index拼一起，即可正常提取。
 cnn_outputs = tf.gather_nd(params=cnn_outs, indices=res) # [BATCH_SIZE * TOP_K, HIDDEN_SIZE]
+print('cnn_outputs shape:', cnn_outputs.shape)
 cnn_outputs = tf.reshape(cnn_outputs, [BATCH_SIZE, TOP_K, HIDDEN_SIZE])
+print('cnn_outputs shape:', cnn_outputs.shape)
 
 
 with tf.Session() as sess:
