@@ -66,7 +66,7 @@ def data_iterator(data, config):
     batch_size = config.batch_size
 
     while True:
-        batches_per_epoch = data_size // batch_size + 1
+        batches_per_epoch = data_size // batch_size
         for batch_num in range(batches_per_epoch):
             start_index = batch_num * batch_size
             end_index = min((batch_num + 1) * batch_size, data_size)

@@ -14,7 +14,7 @@ import sys
 from gcnn_model import WordModel
 
 class Classification(object):
-    def __init__(self, model_file, num_min_probability):
+    def __init__(self, model_file, num_min_probability, eval_per_steps=100, save_per_steps=100):
         self.FLAGS = config.FLAGS
         self._config = Config()
         self._config.get_config(self.FLAGS.vocab_path, self.FLAGS.model_config)
@@ -27,6 +27,8 @@ class Classification(object):
         self.vocab_size = self._config.vocab_size_in
         self.batch_size = self._config.batch_size
         self.hidden_size = self._config.word_hidden_size
+        self.eval_per_steps = eval_per_steps
+        self.save_per_steps = save_per_steps
 
 
     def export_graph(self, session, iter):
@@ -49,39 +51,28 @@ class Classification(object):
         print("Graph is saved to: ", model_export_name)
 
 
-    def get_min_probability_words_cnnout(self, inputs, y_inputs, lm):
-        # g_lm = tf.Graph()
-        # with g_lm.as_default():
-        #     with tf.variable_scope("WordModel"):
-        #         lm = WordModel(is_training=False, config=self._config)
-        #     restore_variables = dict()
-        #     for v in tf.trainable_variables():
-        #         # print("Variables:", v.name)
-        #         restore_variables[v.name] = v
-        # gpu_config = tf.ConfigProto()
-        # gpu_config.gpu_options.allow_growth = True
-        # # gpu_config.gpu_options.per_process_gpu_memory_fraction = self._config.gpu_fraction
-        # sess_lm = tf.Session(graph=g_lm, config=gpu_config)
-        #
-        # sv = tf.train.Saver(restore_variables)
-        # sv.restore(sess_lm, self.model)
-        # sv = tf.train.import_meta_graph("model_1/model_test.ckpt-485.meta")
-        # sv.restore(self._sess, "./model_1/model_test.ckpt-485")
-        probabilities, cnn_outs = self.sess_lm.run([lm._probabilities, lm.cnn_out], feed_dict={lm.input_data: inputs})#[batch, num_steps, vocab]
-        probabilities = np.reshape(probabilities, [self.batch_size, self.num_setps, -1])
-        inputs_oh = np.eye(self.vocab_size)[y_inputs]
-        probabilities_oh = probabilities * inputs_oh
-        probs = np.max(probabilities_oh, axis=-1)#[batch, num_steps]
-        probs[y_inputs == 0] = 1#将补0的部分和eos部分的概率设为1，防止被取出
-        inds = np.argsort(probs, axis=-1)#按照从小到大，取出下标
-        cnn_outputs = list()
-        for i in range(len(inds)):
-            ind = inds[i][:self.num_word]
-            cnn_out = cnn_outs[i][ind]
-            cnn_outputs.append(cnn_out)
-        return cnn_outputs     #[batch, k, hidden_size]
+    def get_min_probability_words_cnnout(self):
+        inputs_one_hot = tf.one_hot(indices=self.lm.target_data, depth=self.vocab_size, axis=-1)  # [BATCH_SIZE, NUM_STEPS, VOCAB_SIZE]
+        probs = tf.reduce_max(tf.reshape(self.lm._probabilities, [self.batch_size, self.num_setps, -1]) * inputs_one_hot, axis=-1)  # [BATCH_SIZE, NUM_STEPS]
+        #print("probs shape:", probs.shape)
+        zero_mask = tf.cast(tf.equal(self.lm.target_data, tf.zeros_like(self.lm.target_data)), tf.float32)
 
+        probs = probs + zero_mask  # 给补零的位置加一（从而结果大于1），防止被取出
+        # probs = probs * (1 - zero_mask) + tf.ones_like(probs) * zero_mask # 若要严格等价于源代码可以这样写，但是没必要
 
+        top_k_values, top_k_indices = tf.nn.top_k(-probs, k=self.num_word)  # [BATCH_SIZE, TOP_K], [BATCH_SIZE, TOP_K]
+
+        # 形如 [BATCH_SIZE * TOP_K]，第 i * TOP_K 至 (i+1)* TOP_K 之间的元素全是 i。
+        # 即：[0, 0, ..., 0, 1, 1, ..., 1, ..., BATCH_SIZE-1, BATCH_SIZE-1, ..., BATCH_SIZE-1]
+        cnn_indices = tf.reshape(tf.tile(tf.reshape(tf.range(self.batch_size), [-1, 1]), multiples=[1, self.num_word]), [-1])
+        res = tf.transpose(tf.stack([cnn_indices, tf.reshape(top_k_indices, [-1])]), [1, 0])  # [BATCH_SIZE * TOP_K, 2]
+
+        # 即手动添加上batch的这个维度，然后将batch和topk提取出的index拼一起，即可正常提取。
+        cnn_outputs = tf.gather_nd(params=self.lm.cnn_out, indices=res)  # [BATCH_SIZE * TOP_K, HIDDEN_SIZE]
+        #print('cnn_outputs shape:', cnn_outputs.shape)
+        cnn_outputs = tf.reshape(cnn_outputs, [self.batch_size, self.num_word, -1])
+        print('cnn_outputs shape:', cnn_outputs.shape)
+        return cnn_outputs
 
     def main(self):
         if not self.FLAGS.data_path:
@@ -91,81 +82,74 @@ class Classification(object):
         train_data = data_feeder.read_file(self.FLAGS.data_path, self._config, is_train=True)
         valid_data = data_feeder.read_file(self.FLAGS.data_path, self._config, is_train=False)
 
-        g_lm = tf.Graph()
-        with g_lm.as_default():
-            with tf.variable_scope("WordModel"):
-                lm = WordModel(is_training=False, config=self._config)
-            restore_variables = dict()
-            for v in tf.trainable_variables():
-                print("LM Variables:", v.name)
-                restore_variables[v.name] = v
-        gpu_config = tf.ConfigProto()
-        #gpu_config.gpu_options.allow_growth = True
-        gpu_config.gpu_options.per_process_gpu_memory_fraction = 0.45
-        self.sess_lm = tf.Session(graph=g_lm, config=gpu_config)
-
-        sv = tf.train.Saver(restore_variables)
-        sv.restore(self.sess_lm, self.model)
-
-        # with open(self.model, 'rb') as f:
-        #     graph_def = tf.GraphDef()
-        #     graph_def.ParseFromString(f.read())
-        #     tf.import_graph_def(graph_def)
-
-        gpu_config = tf.ConfigProto()
-        #gpu_config.gpu_options.allow_growth = True
-        gpu_config.gpu_options.per_process_gpu_memory_fraction = 0.45
-        self._sess = tf.Session(graph=tf.get_default_graph(), config=gpu_config)
-
-        self.global_step = tf.train.get_or_create_global_step()
-        # self.global_step = global_step.assign(global_step + 1)
-        self.cnn_inputs = tf.placeholder(dtype=tf.float32, shape=[self.batch_size, self.num_word, self.hidden_size], name="cnn_outputs_for_classification")
-        self.y = tf.placeholder(dtype=tf.float32, shape=[self.batch_size, 2], name='y')
-
-        with tf.name_scope("maxpooling_layer"):
-            h = tf.expand_dims(self.cnn_inputs, axis=-1)
-            pooled = tf.nn.max_pool(h, ksize=[1, self.num_word, 1, 1], strides=[1, 1, 1, 1], padding="VALID", name="maxpool")
-            pooled = tf.squeeze(pooled)
-            #[batch, hideen_size]
-            print("The shape of pooling outputs:", pooled.shape)
-
-        with tf.variable_scope("softmax_and_output"):
-            self.soft_w = tf.get_variable("soft_w", shape=[self.hidden_size, 2], dtype=tf.float32)
-            soft_b = tf.get_variable("soft_b", shape=[2], dtype=tf.float32)
-
-            self.logits = tf.nn.xw_plus_b(pooled, self.soft_w, soft_b, name="logits")
-
-            self.predictions = tf.argmax(self.logits, 1, name="predictions")
-
-        with tf.name_scope("loss"):
-            losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y)
-            self.loss = tf.reduce_mean(losses)
-
-        with tf.name_scope("accuracy"):
-            correct_predictions = tf.equal(self.predictions, tf.arg_max(self.y, 1))
-            self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
-
-        self._train_op = tf.train.AdamOptimizer(1e-3).minimize(self.loss, global_step=self.global_step)
-
+        with tf.variable_scope("WordModel"):
+            self.lm = WordModel(is_training=False, config=self._config)
         restore_variables = dict()
         for v in tf.trainable_variables():
-            print("store:", v.name)
-
+            print("LM Variables:", v.name)
             restore_variables[v.name] = v
+        gpu_config = tf.ConfigProto()
+        #gpu_config.gpu_options.allow_growth = True
+        gpu_config.gpu_options.per_process_gpu_memory_fraction = 0.45
+        self._sess = tf.Session(config=gpu_config)
 
         sv = tf.train.Saver(restore_variables)
+        sv.restore(self._sess, self.model)
+
+        with tf.variable_scope("Classification"):
+            self.global_step = tf.train.get_or_create_global_step()
+
+            self.cnn_inputs = self.get_min_probability_words_cnnout()   #[BATCH_SIZE, TOP_K, HIDDEN_SIZE]
+            # self.cnn_inputs = tf.placeholder(dtype=tf.float32, shape=[self.batch_size, self.num_word, self.hidden_size], name="cnn_outputs_for_classification")
+            self.y = tf.placeholder(dtype=tf.float32, shape=[self.batch_size, 2], name='y')
+
+            with tf.name_scope("maxpooling_layer"):
+                h = tf.expand_dims(self.cnn_inputs, axis=-1)
+                pooled = tf.nn.max_pool(h, ksize=[1, self.num_word, 1, 1], strides=[1, 1, 1, 1], padding="VALID", name="maxpool")
+                pooled = tf.squeeze(pooled)
+                #[batch, hideen_size]
+                print("The shape of pooling outputs:", pooled.shape)
+
+            with tf.variable_scope("softmax_and_output"):
+                self.soft_w = tf.get_variable("soft_w", shape=[self.hidden_size, 2], dtype=tf.float32)
+                soft_b = tf.get_variable("soft_b", shape=[2], dtype=tf.float32)
+
+                self.logits = tf.nn.xw_plus_b(pooled, self.soft_w, soft_b, name="logits")
+
+                self.predictions = tf.argmax(self.logits, 1, name="predictions")
+
+            with tf.name_scope("loss"):
+                losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y)
+                self.loss = tf.reduce_mean(losses)
+
+            with tf.name_scope("accuracy"):
+                correct_predictions = tf.equal(self.predictions, tf.arg_max(self.y, 1))
+                self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+
+            self._train_op = tf.train.AdamOptimizer(1e-3).minimize(self.loss, global_step=self.global_step)
+
+        restore_variables_2 = dict()
+        for v in tf.trainable_variables():
+            print("Store:", v.name)
+
+            restore_variables_2[v.name] = v
+
+        sv_2 = tf.train.Saver(restore_variables_2)
 
         if not self.FLAGS.model_name.endswith(".ckpt"):
             self.FLAGS.model_name += ".ckpt"
 
-        init = tf.global_variables_initializer()
+        new_vars = [v for v in tf.global_variables() if v.name.startswith("Classification")]
+        for v in new_vars:
+            print("Init:", v)
+        init = tf.variables_initializer(new_vars, name="Initializer")
         self._sess.run(init)
 
         check_point_dir = os.path.join(self.FLAGS.save_path)
         ckpt = tf.train.get_checkpoint_state(check_point_dir)
         if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
             print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
-            sv.restore(self._sess, ckpt.model_checkpoint_path)
+            sv_2.restore(self._sess, ckpt.model_checkpoint_path)
         else:
             print("Created model with fresh parameters.")
 
@@ -181,42 +165,43 @@ class Classification(object):
             for step, (batches_per_epoch, lm_in, lm_out, label) in enumerate(data_feeder.data_iterator(train_data, self._config)):
                 if step >= batches_per_epoch:
                     break
-                cnn_outs = self.get_min_probability_words_cnnout(lm_in, lm_out, lm)
-                feed_dict = {self.cnn_inputs: cnn_outs,
+                feed_dict = {self.lm.input_data: lm_in,
+                             self.lm.target_data: lm_out,
                              self.y: label}
 
                 _, gloabl_step, loss, accurarcy = self._sess.run([self._train_op, self.global_step, self.loss, self.accuracy], feed_dict)
                 time_str = datetime.datetime.now().isoformat()
                 print("{}: epoch {}, step {}, loss {:g}, acc {:g}" .format(time_str, i+1,gloabl_step, loss, accurarcy))
+                if gloabl_step % self.eval_per_steps == 0:
+                    print("Evaluation:\n")
+                    for step, (batches_per_epoch, lm_in, lm_out, label) in enumerate(
+                            data_feeder.data_iterator(valid_data, self._config)):
+                        if step >= batches_per_epoch:
+                            break
+                        feed_dict = {self.lm.input_data: lm_in,
+                                     self.lm.target_data: lm_out,
+                                     self.y: label}
 
+                        loss, dev_accurarcy = self._sess.run([self.loss, self.accuracy], feed_dict)
+                        time_str = datetime.datetime.now().isoformat()
+                        print("{}: epoch {}, Develop loss {:g}, acc {:g}".format(time_str, i + 1, loss, dev_accurarcy))
+
+                    print(time.strftime('%Y-%m-%d %H:%M:%S'), file=logfile)
+                    # print("Epoch: %d Valid acc: %.3f" % (i + 1, dev_accurarcy), file=logfile)
+                    logfile.flush()
+                if gloabl_step % self.save_per_steps == 0:
+                    print("Saving Model:\n")
+                    if self.FLAGS.save_path:
+                        print("Saving model to %s." % self.FLAGS.save_path, file=logfile)
+                        model_save_path = os.path.join(save_path, self.FLAGS.model_name)
+                        sv_2.save(self._sess, model_save_path)
+                        print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] Begin exporting graph!")
+                        self.export_graph(self._sess, i)
+                        print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] Finish exporting graph!")
             print(time.strftime('%Y-%m-%d %H:%M:%S'), file=logfile)
             # print("Epoch: %d Train acc: %.3f" % (i + 1, accurarcy), file=logfile)
             logfile.flush()
-            #####################    Dev    #########################
-            for step, (batches_per_epoch, lm_in, lm_out, label) in enumerate(data_feeder.data_iterator(valid_data, self._config)):
-                if step >= batches_per_epoch:
-                    break
-                cnn_outs = self.get_min_probability_words_cnnout(lm_in, lm_out)
-                feed_dict = {self.cnn_inputs: cnn_outs,
-                             self.y: label}
-
-                loss, dev_accurarcy = self._sess.run([self.loss, self.accuracy], feed_dict)
-                time_str = datetime.datetime.now().isoformat()
-                print("{}: epoch {}, Develop loss {:g}, acc {:g}" .format(time_str, i+1, loss, dev_accurarcy))
-
-            print(time.strftime('%Y-%m-%d %H:%M:%S'), file=logfile)
-            # print("Epoch: %d Valid acc: %.3f" % (i + 1, dev_accurarcy), file=logfile)
-            logfile.flush()
-
-            if self.FLAGS.save_path:
-                print("Saving model to %s." % self.FLAGS.save_path, file=logfile)
-                model_save_path = os.path.join(save_path, self.FLAGS.model_name)
-                sv.save(self._sess, model_save_path)
-                print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] Begin exporting graph!")
-                self.export_graph(self._sess, i)
-                print("[" + time.strftime('%Y-%m-%d %H:%M:%S') + "] Finish exporting graph!")
-
-            logfile.close()
+        logfile.close()
 
 if __name__ == "__main__":
     args = sys.argv
