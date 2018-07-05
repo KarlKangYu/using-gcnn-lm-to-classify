@@ -33,7 +33,7 @@ class Classification(object):
 
     def export_graph(self, session, iter):
 
-        variables_to_export = ["softmax_and_output/predictions"
+        variables_to_export = ["Classification/softmax_and_output/predictions"
                                ]
 
 
