@@ -14,7 +14,7 @@ import sys
 from gcnn_model import WordModel
 
 class Classification(object):
-    def __init__(self, model_file, num_min_probability, eval_per_steps=100, save_per_steps=100):
+    def __init__(self, model_file, num_min_probability, eval_per_steps=10000, save_per_steps=1000):
         self.FLAGS = config.FLAGS
         self._config = Config()
         self._config.get_config(self.FLAGS.vocab_path, self.FLAGS.model_config)
